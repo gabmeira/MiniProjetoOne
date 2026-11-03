@@ -7,3 +7,9 @@ Para analise de dados seguim um padrão recomendado?
 Como descobrir por NumPy/Pandas/Python o que está de diferente em cada Coluna?
 Listar o que já percebeu de erro em cada coluna!
 Qual técnica ou conceito usar aqui? Qual o nome da Técnica/Conceito?
+
+### Releitura do Desafio
+O que preciso entregar de fato?
+Depois como vou conseguir entregar?
+Quais etapas vou precisar fazer?
+Que tipo de tratamento de dados ou de código precisarei fazer?
