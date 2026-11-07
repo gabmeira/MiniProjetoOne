@@ -1,6 +1,12 @@
 from pathlib import Path
 
-from funcoes import carregar_dados, preparar_dados, resumir_qualidade, investigar_entregas
+from funcoes import (
+    carregar_dados,
+    preparar_dados,
+    resumir_qualidade,
+    investigar_entregas,
+    resumir_pedidos,
+)
 
 
 def main():
@@ -9,6 +15,7 @@ def main():
     tratados = preparar_dados(dados)
     qualidade = resumir_qualidade(tratados)
     entregas = investigar_entregas(tratados)
+    pedidos = resumir_pedidos(tratados)
 
     print("Dimensões:", dados.shape)
     print("Dimensões após preparação:", tratados.shape)
@@ -89,6 +96,21 @@ def main():
                 f"  Pedido {exemplo['pedido_id']} | status: {exemplo['status_pedido']} | "
                 f"venda: {exemplo['data_venda']} | entrega: {exemplo['data_entrega'] or '(vazia)'}"
             )
+
+    print("\nResumo de pedidos:")
+    print("Pedidos por canal reconhecido:")
+    print(pedidos["pedidos_por_canal"].to_string(index=False))
+    print(
+        f"  Incluídos: {int(pedidos['pedidos_por_canal']['pedidos'].sum())} | "
+        f"Excluídos por canal não reconhecido: {pedidos['excluidos_canal']}"
+    )
+    print("Pedidos por ano/mês com data de venda válida:")
+    print(pedidos["pedidos_por_ano_mes"].to_string(index=False))
+    print(
+        f"  Incluídos: {int(pedidos['pedidos_por_ano_mes']['pedidos'].sum())} | "
+        f"Excluídos por data inválida: {pedidos['excluidos_data']}"
+    )
+    print("Nota: pedidos registrados, todos os status; não representa unidades ou receita.")
 
 
 if __name__ == "__main__":

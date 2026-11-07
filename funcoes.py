@@ -179,3 +179,40 @@ def investigar_entregas(tratados) -> dict:
         "hipotese_confirmada": hipotese_confirmada,
         "exemplos": exemplos,
     }
+
+
+def resumir_pedidos(tratados) -> dict:
+    """Resume pedidos por canal reconhecido e por mês com data válida.
+
+    Cada linha representa um pedido. As exclusões são independentes: uma
+    data inválida não impede a contagem por canal, e um canal desconhecido
+    não impede a contagem por ano/mês.
+    """
+    por_canal = tratados.loc[tratados["canal_reconhecido"]]
+    pedidos_por_canal = (
+        por_canal.groupby("canal_normalizado").size()
+        .rename("pedidos")
+        .reset_index()
+        .sort_values(["pedidos", "canal_normalizado"], ascending=[False, True])
+        .reset_index(drop=True)
+    )
+    if pedidos_por_canal.empty:
+        pedidos_por_canal = pd.DataFrame(columns=["canal_normalizado", "pedidos"])
+
+    por_data = tratados.loc[~tratados["data_venda_invalida"]]
+    pedidos_por_ano_mes = (
+        por_data.groupby("ano_mes").size()
+        .rename("pedidos")
+        .reset_index()
+        .sort_values("ano_mes")
+        .reset_index(drop=True)
+    )
+    if pedidos_por_ano_mes.empty:
+        pedidos_por_ano_mes = pd.DataFrame(columns=["ano_mes", "pedidos"])
+
+    return {
+        "pedidos_por_canal": pedidos_por_canal,
+        "pedidos_por_ano_mes": pedidos_por_ano_mes,
+        "excluidos_canal": int((~tratados["canal_reconhecido"]).sum()),
+        "excluidos_data": int(tratados["data_venda_invalida"].sum()),
+    }

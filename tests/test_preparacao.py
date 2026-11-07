@@ -12,6 +12,7 @@ from funcoes import (
     normalizar_canal,
     preparar_dados,
     resumir_qualidade,
+    resumir_pedidos,
 )
 
 
@@ -244,6 +245,90 @@ class TestFuncoesDePreparacao(unittest.TestCase):
                 resultado = investigar_entregas(preparar_dados(bruto))
                 self.assertIs(resultado["hipotese_confirmada"], hipotese_esperada)
                 self.assertEqual(resultado["exemplos"], [])
+
+    def test_resumo_de_pedidos_na_base_real(self):
+        tratados = preparar_dados(carregar_dados(PASTA / "halloween_vendas.csv"))
+
+        resumo = resumir_pedidos(tratados)
+
+        self.assertEqual(
+            resumo["pedidos_por_canal"].set_index("canal_normalizado")["pedidos"].to_dict(),
+            {"Web": 666, "Loja física": 551, "Mercado": 283},
+        )
+        mensal = resumo["pedidos_por_ano_mes"].set_index("ano_mes")["pedidos"]
+        self.assertEqual(len(mensal), 8)
+        self.assertEqual(int(mensal.sum()), 1496)
+        self.assertEqual(int(mensal.loc["2024-10"]), 393)
+        self.assertEqual(int(mensal.loc["2025-10"]), 410)
+        self.assertEqual(resumo["excluidos_canal"], 0)
+        self.assertEqual(resumo["excluidos_data"], 4)
+
+    def test_resumo_de_pedidos_conta_pedidos_e_exclui_canal_e_data_independentemente(self):
+        tratados = preparar_dados(pd.DataFrame([
+            linha(pedido_id="1", status_pedido="Cancelado", quantidade="0", preco_unitario="texto"),
+            linha(
+                pedido_id="2",
+                data_venda="2025-01-12 08:00:00",
+                canal_venda="Loja física",
+                status_pedido="Devolvido",
+                quantidade="abc",
+                preco_unitario="-1",
+            ),
+            linha(pedido_id="3", data_venda="2025-02-12 08:00:00", canal_venda="Aplicativo"),
+            linha(pedido_id="4", canal_venda="Web", data_venda=""),
+            linha(pedido_id="5", canal_venda="???", data_venda="2025-02-30 08:00:00"),
+            linha(pedido_id="6", data_venda="2025-10-12 08:00:00", canal_venda="Mercado"),
+        ]))
+        copia = tratados.copy(deep=True)
+
+        resumo = resumir_pedidos(tratados)
+
+        canais = resumo["pedidos_por_canal"]
+        meses = resumo["pedidos_por_ano_mes"]
+        self.assertEqual(list(canais.columns), ["canal_normalizado", "pedidos"])
+        self.assertEqual(list(meses.columns), ["ano_mes", "pedidos"])
+        self.assertEqual(
+            canais.set_index("canal_normalizado")["pedidos"].to_dict(),
+            {"Web": 2, "Loja física": 1, "Mercado": 1},
+        )
+        self.assertEqual(
+            meses.set_index("ano_mes")["pedidos"].to_dict(),
+            {"2024-10": 1, "2025-01": 1, "2025-02": 1, "2025-10": 1},
+        )
+        self.assertEqual(resumo["excluidos_canal"], 2)
+        self.assertEqual(resumo["excluidos_data"], 2)
+        pd.testing.assert_frame_equal(tratados, copia)
+
+    def test_resumo_de_pedidos_vazio_e_todos_invalidos_tem_schemas_e_contagens_zero(self):
+        tratados_base = preparar_dados(pd.DataFrame([linha()]))
+        cenarios = [
+            ("vazio", tratados_base.iloc[0:0].copy(), 0, 0),
+            (
+                "todos inválidos",
+                preparar_dados(pd.DataFrame([
+                    linha(pedido_id="1", canal_venda="???", data_venda=""),
+                    linha(pedido_id="2", canal_venda="Aplicativo", data_venda="2024-02-30 10:00:00"),
+                ])),
+                2,
+                2,
+            ),
+        ]
+
+        for nome, tratados, excluidos_canal, excluidos_data in cenarios:
+            with self.subTest(cenario=nome):
+                resumo = resumir_pedidos(tratados)
+                self.assertEqual(
+                    list(resumo["pedidos_por_canal"].columns),
+                    ["canal_normalizado", "pedidos"],
+                )
+                self.assertEqual(
+                    list(resumo["pedidos_por_ano_mes"].columns),
+                    ["ano_mes", "pedidos"],
+                )
+                self.assertTrue(resumo["pedidos_por_canal"].empty)
+                self.assertTrue(resumo["pedidos_por_ano_mes"].empty)
+                self.assertEqual(resumo["excluidos_canal"], excluidos_canal)
+                self.assertEqual(resumo["excluidos_data"], excluidos_data)
 
 
 if __name__ == "__main__":
