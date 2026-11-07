@@ -1,0 +1,105 @@
+{
+  "qualidade": {
+    "total_pedidos": 1500,
+    "categorias_vazias_preenchidas": 18,
+    "categorias_nao_vazias_alteradas": 1482,
+    "categorias_alteradas_apenas_caixa": 1351,
+    "categorias_alteradas_espacos_pontuacao": 131,
+    "canais_alterados": 45,
+    "canais_nao_reconhecidos": 0,
+    "quantidade_ausentes": 0,
+    "quantidade_nao_numericos": 0,
+    "quantidade_invalidos": 7,
+    "preco_unitario_ausentes": 12,
+    "preco_unitario_nao_numericos": 0,
+    "preco_unitario_invalidos": 12,
+    "custo_unitario_ausentes": 7,
+    "custo_unitario_nao_numericos": 0,
+    "custo_unitario_invalidos": 7,
+    "desconto_pct_ausentes": 0,
+    "desconto_pct_nao_numericos": 0,
+    "desconto_pct_invalidos": 0,
+    "datas_venda_invalidas": 4,
+    "pedidos_com_problema_numerico_obrigatorio": 19,
+    "pedidos_com_problema_core": 23
+  },
+  "entregas": {
+    "total_cancelados": 109,
+    "sem_entrega_total": 143,
+    "sem_entrega_cancelados": 109,
+    "sem_entrega_outros_status": 34,
+    "hipotese_confirmada": false,
+    "exemplos": [
+      {
+        "pedido_id": "1170",
+        "status_pedido": "Concluído",
+        "data_venda": "2025-08-19 22:20:19",
+        "data_entrega": ""
+      },
+      {
+        "pedido_id": "990",
+        "status_pedido": "Concluído",
+        "data_venda": "2025-10-13 20:00:16",
+        "data_entrega": ""
+      },
+      {
+        "pedido_id": "740",
+        "status_pedido": "Concluído",
+        "data_venda": "data_invalida",
+        "data_entrega": ""
+      }
+    ]
+  },
+  "pedidos": {
+    "pedidos_por_canal": [
+      {
+        "canal_normalizado": "Web",
+        "pedidos": 666
+      },
+      {
+        "canal_normalizado": "Loja física",
+        "pedidos": 551
+      },
+      {
+        "canal_normalizado": "Mercado",
+        "pedidos": 283
+      }
+    ],
+    "pedidos_por_ano_mes": [
+      {
+        "ano_mes": "2024-08",
+        "pedidos": 77
+      },
+      {
+        "ano_mes": "2024-09",
+        "pedidos": 104
+      },
+      {
+        "ano_mes": "2024-10",
+        "pedidos": 393
+      },
+      {
+        "ano_mes": "2024-11",
+        "pedidos": 174
+      },
+      {
+        "ano_mes": "2025-08",
+        "pedidos": 62
+      },
+      {
+        "ano_mes": "2025-09",
+        "pedidos": 94
+      },
+      {
+        "ano_mes": "2025-10",
+        "pedidos": 410
+      },
+      {
+        "ano_mes": "2025-11",
+        "pedidos": 182
+      }
+    ],
+    "excluidos_canal": 0,
+    "excluidos_data": 4
+  }
+}

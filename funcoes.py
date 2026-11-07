@@ -1,4 +1,5 @@
 import re
+import json
 from datetime import datetime
 from pathlib import Path
 
@@ -216,3 +217,116 @@ def resumir_pedidos(tratados) -> dict:
         "excluidos_canal": int((~tratados["canal_reconhecido"]).sum()),
         "excluidos_data": int(tratados["data_venda_invalida"].sum()),
     }
+
+
+def exportar_resultados(tratados, qualidade, entregas, pedidos, pasta_saida) -> None:
+    """Exporta os dados preparados e resumos já calculados em arquivos UTF-8."""
+    destino = Path(pasta_saida)
+    destino.mkdir(parents=True, exist_ok=True)
+
+    tratados.to_csv(
+        destino / "dados_processados_com_indicadores.csv",
+        index=False,
+        encoding="utf-8",
+    )
+
+    canal_df = pedidos["pedidos_por_canal"]
+    mes_df = pedidos["pedidos_por_ano_mes"]
+    canal_registros = canal_df.to_dict(orient="records")
+    mes_registros = mes_df.to_dict(orient="records")
+    canal_df.to_csv(destino / "pedidos_por_canal.csv", index=False, encoding="utf-8")
+    mes_df.to_csv(destino / "pedidos_por_ano_mes.csv", index=False, encoding="utf-8")
+
+    colunas_exemplo = ["pedido_id", "status_pedido", "data_venda", "data_entrega"]
+    exemplos = [
+        {coluna: registro.get(coluna, "") for coluna in colunas_exemplo}
+        for registro in entregas.get("exemplos", [])[:3]
+    ]
+    pd.DataFrame(exemplos, columns=colunas_exemplo).to_csv(
+        destino / "exemplos_sem_data_entrega.csv", index=False, encoding="utf-8"
+    )
+
+    resumo = {
+        "qualidade": qualidade,
+        "entregas": entregas,
+        "pedidos": {
+            "pedidos_por_canal": canal_registros,
+            "pedidos_por_ano_mes": mes_registros,
+            "excluidos_canal": int(pedidos["excluidos_canal"]),
+            "excluidos_data": int(pedidos["excluidos_data"]),
+        },
+    }
+    with (destino / "resumo_analise.json").open("w", encoding="utf-8", newline="\n") as arquivo:
+        json.dump(resumo, arquivo, ensure_ascii=False, indent=2, allow_nan=False)
+        arquivo.write("\n")
+
+    def tabela(registros, colunas):
+        linhas = ["| " + " | ".join(colunas) + " |", "| " + " | ".join("---" for _ in colunas) + " |"]
+        for registro in registros:
+            valores = [str(registro.get(coluna, "")) for coluna in colunas]
+            linhas.append("| " + " | ".join(valores) + " |")
+        return "\n".join(linhas)
+
+    def quantidade_chave(chave):
+        return qualidade.get(chave, 0)
+
+    hipotese = entregas.get("hipotese_confirmada")
+    conclusoes = {
+        True: "Os dados são compatíveis com a hipótese nesta base, mas isso não prova uma regra geral.",
+        False: "A hipótese não se confirma nesta base: há pedidos sem data de entrega com outro status.",
+        None: "Não há casos sem data de entrega para avaliar a hipótese.",
+    }
+    markdown = [
+        "# Resumo da análise",
+        "",
+        "## Qualidade e normalização",
+        "",
+        f"- Pedidos analisados: {qualidade.get('total_pedidos', 0)}.",
+        f"- Categorias vazias preenchidas: {quantidade_chave('categorias_vazias_preenchidas')}; "
+        f"categorias não vazias alteradas: {quantidade_chave('categorias_nao_vazias_alteradas')} "
+        f"(apenas caixa: {quantidade_chave('categorias_alteradas_apenas_caixa')}; "
+        f"espaços/pontuação: {quantidade_chave('categorias_alteradas_espacos_pontuacao')}).",
+        f"- Canais alterados: {quantidade_chave('canais_alterados')}; "
+        f"não reconhecidos: {quantidade_chave('canais_nao_reconhecidos')}.",
+        f"- Problemas numéricos obrigatórios (quantidade ou preço): "
+        f"{quantidade_chave('pedidos_com_problema_numerico_obrigatorio')} pedidos.",
+        f"- Quantidade inválida: {quantidade_chave('quantidade_invalidos')} pedidos; "
+        f"preço unitário inválido: {quantidade_chave('preco_unitario_invalidos')} pedidos "
+        f"({quantidade_chave('preco_unitario_ausentes')} ausentes; "
+        f"{quantidade_chave('preco_unitario_nao_numericos')} não numéricos).",
+        f"- Problemas no conjunto principal (quantidade, preço ou data de venda): "
+        f"{quantidade_chave('pedidos_com_problema_core')} pedidos, incluindo "
+        f"{quantidade_chave('datas_venda_invalidas')} datas de venda inválidas.",
+        "- Campos complementares: "
+        f"custo inválido em {quantidade_chave('custo_unitario_invalidos')} pedidos; "
+        f"desconto inválido em {quantidade_chave('desconto_pct_invalidos')} pedidos. "
+        "Contagens de inválidos já incluem ausentes e não devem ser somadas novamente.",
+        "",
+        "## Entregas",
+        "",
+        f"- Pedidos cancelados: {entregas.get('total_cancelados', 0)}.",
+        f"- Pedidos sem data de entrega: {entregas.get('sem_entrega_total', 0)}; "
+        f"com status Cancelado: {entregas.get('sem_entrega_cancelados', 0)}; "
+        f"com outro status: {entregas.get('sem_entrega_outros_status', 0)}.",
+        "- Hipótese de que todos os pedidos sem data de entrega são cancelados: "
+        f"{conclusoes[hipotese]}",
+        "",
+        "## Pedidos por canal reconhecido",
+        "",
+        tabela(canal_registros, list(canal_df.columns)),
+        "",
+        f"Excluídos por canal não reconhecido: {pedidos['excluidos_canal']}.",
+        "",
+        "## Pedidos por ano/mês de venda válida",
+        "",
+        tabela(mes_registros, list(mes_df.columns)),
+        "",
+        f"Excluídos por data de venda inválida: {pedidos['excluidos_data']}.",
+        "",
+        "## Limitações",
+        "",
+        "As contagens representam pedidos registrados de todos os status; não representam unidades vendidas nem receita. "
+        "A base é fictícia e as conclusões descrevem somente os registros analisados.",
+        "",
+    ]
+    (destino / "resumo_analise.md").write_text("\n".join(markdown), encoding="utf-8")

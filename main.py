@@ -6,6 +6,7 @@ from funcoes import (
     resumir_qualidade,
     investigar_entregas,
     resumir_pedidos,
+    exportar_resultados,
 )
 
 
@@ -111,6 +112,10 @@ def main():
         f"Excluídos por data inválida: {pedidos['excluidos_data']}"
     )
     print("Nota: pedidos registrados, todos os status; não representa unidades ou receita.")
+
+    pasta_resultados = pasta / "resultados"
+    exportar_resultados(tratados, qualidade, entregas, pedidos, pasta_resultados)
+    print(f"\nResultados exportados para: {pasta_resultados}")
 
 
 if __name__ == "__main__":

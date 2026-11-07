@@ -1,4 +1,6 @@
 import hashlib
+import json
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -8,6 +10,7 @@ from funcoes import (
     _converter_data,
     _limpar_categoria,
     carregar_dados,
+    exportar_resultados,
     investigar_entregas,
     normalizar_canal,
     preparar_dados,
@@ -329,6 +332,162 @@ class TestFuncoesDePreparacao(unittest.TestCase):
                 self.assertTrue(resumo["pedidos_por_ano_mes"].empty)
                 self.assertEqual(resumo["excluidos_canal"], excluidos_canal)
                 self.assertEqual(resumo["excluidos_data"], excluidos_data)
+
+    def test_exportacao_base_real_gera_arquivos_com_conteudo_e_textos_originais(self):
+        caminho_origem = PASTA / "halloween_vendas.csv"
+        hash_origem = hashlib.sha256(caminho_origem.read_bytes()).hexdigest()
+        bruto = carregar_dados(caminho_origem)
+        tratados = preparar_dados(bruto)
+        qualidade = resumir_qualidade(tratados)
+        entregas = investigar_entregas(tratados)
+        pedidos = resumir_pedidos(tratados)
+
+        with tempfile.TemporaryDirectory() as pasta_temporaria:
+            destino = Path(pasta_temporaria)
+            self.assertIsNone(
+                exportar_resultados(tratados, qualidade, entregas, pedidos, destino)
+            )
+
+            esperados = {
+                "dados_processados_com_indicadores.csv",
+                "pedidos_por_canal.csv",
+                "pedidos_por_ano_mes.csv",
+                "exemplos_sem_data_entrega.csv",
+                "resumo_analise.json",
+                "resumo_analise.md",
+            }
+            self.assertEqual({arquivo.name for arquivo in destino.iterdir()}, esperados)
+
+            dados_exportados = pd.read_csv(
+                destino / "dados_processados_com_indicadores.csv",
+                dtype=str,
+                keep_default_na=False,
+            )
+            self.assertEqual(dados_exportados.shape, (1500, 44))
+            for coluna in bruto.columns:
+                self.assertEqual(dados_exportados[coluna].tolist(), bruto[coluna].tolist())
+
+            canais_exportados = pd.read_csv(destino / "pedidos_por_canal.csv")
+            meses_exportados = pd.read_csv(destino / "pedidos_por_ano_mes.csv")
+            self.assertEqual(int(canais_exportados["pedidos"].sum()), 1500)
+            self.assertEqual(int(meses_exportados["pedidos"].sum()), 1496)
+            exemplos_exportados = pd.read_csv(
+                destino / "exemplos_sem_data_entrega.csv",
+                dtype=str,
+                keep_default_na=False,
+            )
+            self.assertEqual(
+                list(exemplos_exportados.columns),
+                ["pedido_id", "status_pedido", "data_venda", "data_entrega"],
+            )
+            self.assertEqual(len(exemplos_exportados), 3)
+
+            with (destino / "resumo_analise.json").open(encoding="utf-8") as arquivo:
+                resumo_json = json.load(arquivo)
+            self.assertEqual(resumo_json["qualidade"], qualidade)
+            self.assertEqual(resumo_json["entregas"], entregas)
+            self.assertEqual(
+                resumo_json["pedidos"]["pedidos_por_canal"],
+                pedidos["pedidos_por_canal"].to_dict(orient="records"),
+            )
+            self.assertEqual(
+                resumo_json["pedidos"]["pedidos_por_ano_mes"],
+                pedidos["pedidos_por_ano_mes"].to_dict(orient="records"),
+            )
+            self.assertEqual(resumo_json["pedidos"]["excluidos_canal"], pedidos["excluidos_canal"])
+            self.assertEqual(resumo_json["pedidos"]["excluidos_data"], pedidos["excluidos_data"])
+            self.assertTrue((destino / "resumo_analise.md").read_text(encoding="utf-8").strip())
+
+        self.assertEqual(hashlib.sha256(caminho_origem.read_bytes()).hexdigest(), hash_origem)
+
+    def test_exportacao_e_deterministica_e_nao_muta_entradas(self):
+        caminho_origem = PASTA / "halloween_vendas.csv"
+        hash_origem = hashlib.sha256(caminho_origem.read_bytes()).hexdigest()
+        bruto = carregar_dados(caminho_origem)
+        tratados = preparar_dados(bruto)
+        qualidade = resumir_qualidade(tratados)
+        entregas = investigar_entregas(tratados)
+        pedidos = resumir_pedidos(tratados)
+        bruto_antes = bruto.copy(deep=True)
+        tratados_antes = tratados.copy(deep=True)
+        qualidade_antes = dict(qualidade)
+        entregas_antes = json.loads(json.dumps(entregas, ensure_ascii=False))
+        canais_antes = pedidos["pedidos_por_canal"].copy(deep=True)
+        meses_antes = pedidos["pedidos_por_ano_mes"].copy(deep=True)
+        pedidos_scalars_antes = (pedidos["excluidos_canal"], pedidos["excluidos_data"])
+
+        with tempfile.TemporaryDirectory() as primeira, tempfile.TemporaryDirectory() as segunda:
+            exportar_resultados(tratados, qualidade, entregas, pedidos, primeira)
+            exportar_resultados(tratados, qualidade, entregas, pedidos, segunda)
+            hashes_primeira = {
+                arquivo.name: hashlib.sha256(arquivo.read_bytes()).hexdigest()
+                for arquivo in Path(primeira).iterdir()
+            }
+            hashes_segunda = {
+                arquivo.name: hashlib.sha256(arquivo.read_bytes()).hexdigest()
+                for arquivo in Path(segunda).iterdir()
+            }
+
+        self.assertEqual(hashes_primeira, hashes_segunda)
+        pd.testing.assert_frame_equal(bruto, bruto_antes)
+        pd.testing.assert_frame_equal(tratados, tratados_antes)
+        self.assertEqual(qualidade, qualidade_antes)
+        self.assertEqual(entregas, entregas_antes)
+        pd.testing.assert_frame_equal(pedidos["pedidos_por_canal"], canais_antes)
+        pd.testing.assert_frame_equal(pedidos["pedidos_por_ano_mes"], meses_antes)
+        self.assertEqual(
+            (pedidos["excluidos_canal"], pedidos["excluidos_data"]),
+            pedidos_scalars_antes,
+        )
+        self.assertEqual(hashlib.sha256(caminho_origem.read_bytes()).hexdigest(), hash_origem)
+
+    def test_exportacao_sem_exemplos_e_entrada_vazia_preserva_schemas(self):
+        cenarios = [
+            (
+                "hipótese verdadeira",
+                pd.DataFrame([linha(status_pedido="Cancelado", data_entrega="")]),
+                True,
+            ),
+            (
+                "hipótese indeterminada",
+                pd.DataFrame([linha(status_pedido="Concluído")]),
+                None,
+            ),
+            ("entrada vazia", pd.DataFrame(columns=list(linha())), None),
+        ]
+
+        for nome, bruto, hipotese_esperada in cenarios:
+            with self.subTest(cenario=nome), tempfile.TemporaryDirectory() as pasta_temporaria:
+                tratados = preparar_dados(bruto)
+                qualidade = resumir_qualidade(tratados)
+                entregas = investigar_entregas(tratados)
+                pedidos = resumir_pedidos(tratados)
+                destino = Path(pasta_temporaria)
+                exportar_resultados(tratados, qualidade, entregas, pedidos, destino)
+
+                exemplos = pd.read_csv(
+                    destino / "exemplos_sem_data_entrega.csv",
+                    dtype=str,
+                    keep_default_na=False,
+                )
+                self.assertEqual(
+                    list(exemplos.columns),
+                    ["pedido_id", "status_pedido", "data_venda", "data_entrega"],
+                )
+                self.assertTrue(exemplos.empty)
+                with (destino / "resumo_analise.json").open(encoding="utf-8") as arquivo:
+                    resumo_json = json.load(arquivo)
+                self.assertIs(resumo_json["entregas"]["hipotese_confirmada"], hipotese_esperada)
+                self.assertEqual(resumo_json["entregas"]["exemplos"], [])
+                self.assertEqual(
+                    resumo_json["pedidos"]["pedidos_por_canal"],
+                    pedidos["pedidos_por_canal"].to_dict(orient="records"),
+                )
+                self.assertEqual(
+                    resumo_json["pedidos"]["pedidos_por_ano_mes"],
+                    pedidos["pedidos_por_ano_mes"].to_dict(orient="records"),
+                )
+                self.assertTrue((destino / "resumo_analise.md").is_file())
 
 
 if __name__ == "__main__":
