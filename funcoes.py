@@ -93,5 +93,54 @@ def preparar_dados(dados):
         tratados["preco_invalido"].to_numpy(dtype=bool),
         tratados["data_venda_invalida"].to_numpy(dtype=bool),
     ])
+    # Cada linha é um pedido; axis=1 combina as três verificações da mesma linha.
+    # any(axis=1) marca o pedido se ao menos uma dessas verificações for verdadeira.
     tratados["pedido_com_problema"] = np.where(problemas.any(axis=1), True, False)
     return tratados
+
+
+def resumir_qualidade(tratados) -> dict:
+    """Resume contagens sem alterar o DataFrame preparado.
+
+    O total de pedidos com problema considera somente quantidade, preço e data
+    de venda. Ajustes de categoria/canal e problemas complementares de custo/
+    desconto aparecem em contagens próprias e não entram nesse total.
+    """
+    resumo = {
+        "total_pedidos": int(len(tratados)),
+        "categorias_vazias_preenchidas": int(tratados["categoria_vazia"].sum()),
+    }
+
+    categoria_nao_vazia = ~tratados["categoria_vazia"]
+    categoria_alterada = categoria_nao_vazia & tratados["categoria"].ne(tratados["categoria_limpa"])
+    apenas_caixa = tratados["categoria"].str.casefold().eq(
+        tratados["categoria_limpa"].str.casefold()
+    )
+    resumo["categorias_nao_vazias_alteradas"] = int(categoria_alterada.sum())
+    resumo["categorias_alteradas_apenas_caixa"] = int((categoria_alterada & apenas_caixa).sum())
+    resumo["categorias_alteradas_espacos_pontuacao"] = int(
+        (categoria_alterada & ~apenas_caixa).sum()
+    )
+
+    canal_alterado = tratados["canal_reconhecido"] & tratados["canal_venda"].ne(
+        tratados["canal_normalizado"]
+    )
+    resumo["canais_alterados"] = int(canal_alterado.sum())
+    resumo["canais_nao_reconhecidos"] = int((~tratados["canal_reconhecido"]).sum())
+
+    for coluna in ("quantidade", "preco_unitario", "custo_unitario", "desconto_pct"):
+        resumo[f"{coluna}_ausentes"] = int(tratados[f"{coluna}_ausente"].sum())
+        resumo[f"{coluna}_nao_numericos"] = int(tratados[f"{coluna}_nao_numerico"].sum())
+        flag_invalido = {
+            "quantidade": "quantidade_invalida",
+            "preco_unitario": "preco_invalido",
+            "custo_unitario": "custo_invalido",
+            "desconto_pct": "desconto_invalido",
+        }[coluna]
+        resumo[f"{coluna}_invalidos"] = int(tratados[flag_invalido].sum())
+
+    resumo["datas_venda_invalidas"] = int(tratados["data_venda_invalida"].sum())
+    problema_numerico_obrigatorio = tratados["quantidade_invalida"] | tratados["preco_invalido"]
+    resumo["pedidos_com_problema_numerico_obrigatorio"] = int(problema_numerico_obrigatorio.sum())
+    resumo["pedidos_com_problema_core"] = int(tratados["pedido_com_problema"].sum())
+    return resumo

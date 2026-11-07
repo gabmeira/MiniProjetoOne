@@ -4,7 +4,14 @@ from pathlib import Path
 
 import pandas as pd
 
-from funcoes import _converter_data, _limpar_categoria, carregar_dados, normalizar_canal, preparar_dados
+from funcoes import (
+    _converter_data,
+    _limpar_categoria,
+    carregar_dados,
+    normalizar_canal,
+    preparar_dados,
+    resumir_qualidade,
+)
 
 
 PASTA = Path(__file__).resolve().parents[1]
@@ -119,6 +126,60 @@ class TestFuncoesDePreparacao(unittest.TestCase):
         self.assertEqual(int(dados["preco_invalido"].sum()), 12)
         self.assertEqual(int(dados["data_venda_invalida"].sum()), 4)
         self.assertEqual(int(dados["pedido_com_problema"].sum()), 23)
+
+    def test_resumo_de_qualidade_na_base_real(self):
+        bruto = carregar_dados(PASTA / "halloween_vendas.csv")
+        resumo = resumir_qualidade(preparar_dados(bruto))
+
+        self.assertEqual(resumo["total_pedidos"], 1500)
+        self.assertEqual(resumo["categorias_vazias_preenchidas"], 18)
+        self.assertEqual(resumo["categorias_nao_vazias_alteradas"], 1482)
+        self.assertEqual(resumo["categorias_alteradas_apenas_caixa"], 1351)
+        self.assertEqual(resumo["categorias_alteradas_espacos_pontuacao"], 131)
+        self.assertEqual(resumo["canais_alterados"], 45)
+        self.assertEqual(resumo["quantidade_invalidos"], 7)
+        self.assertEqual(resumo["preco_unitario_invalidos"], 12)
+        self.assertEqual(resumo["custo_unitario_invalidos"], 7)
+        self.assertEqual(resumo["datas_venda_invalidas"], 4)
+        self.assertEqual(resumo["pedidos_com_problema_numerico_obrigatorio"], 19)
+        self.assertEqual(resumo["pedidos_com_problema_core"], 23)
+
+    def test_resumo_de_qualidade_usa_ou_no_core_sem_mutar_dataframe(self):
+        bruto = pd.DataFrame([
+            linha(quantidade="0", preco_unitario="texto", custo_unitario=""),
+            linha(pedido_id="2", custo_unitario="texto"),
+        ])
+        copia = bruto.copy(deep=True)
+        dados = preparar_dados(bruto)
+        copia_dados = dados.copy(deep=True)
+
+        resumo = resumir_qualidade(dados)
+
+        self.assertEqual(resumo["quantidade_invalidos"], 1)
+        self.assertEqual(resumo["preco_unitario_invalidos"], 1)
+        self.assertEqual(resumo["custo_unitario_invalidos"], 2)
+        self.assertEqual(resumo["pedidos_com_problema_numerico_obrigatorio"], 1)
+        self.assertEqual(resumo["pedidos_com_problema_core"], 1)
+        pd.testing.assert_frame_equal(bruto, copia)
+        pd.testing.assert_frame_equal(dados, copia_dados)
+
+    def test_resumo_de_qualidade_distingue_categoria_vazia_caixa_e_pontuacao(self):
+        dados = preparar_dados(pd.DataFrame([
+            linha(categoria="   "),
+            linha(pedido_id="2", categoria="!!!"),
+            linha(pedido_id="3", categoria="FANTASIA"),
+            linha(pedido_id="4", categoria="  ACESSORIO!!!  ", canal_venda=" WEB "),
+            linha(pedido_id="5", categoria="fantasia", canal_venda="???"),
+        ]))
+
+        resumo = resumir_qualidade(dados)
+
+        self.assertEqual(resumo["categorias_vazias_preenchidas"], 1)
+        self.assertEqual(resumo["categorias_nao_vazias_alteradas"], 3)
+        self.assertEqual(resumo["categorias_alteradas_apenas_caixa"], 1)
+        self.assertEqual(resumo["categorias_alteradas_espacos_pontuacao"], 2)
+        self.assertEqual(resumo["canais_alterados"], 1)
+        self.assertEqual(resumo["canais_nao_reconhecidos"], 1)
 
 
 if __name__ == "__main__":
