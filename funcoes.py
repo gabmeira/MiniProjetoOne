@@ -144,3 +144,38 @@ def resumir_qualidade(tratados) -> dict:
     resumo["pedidos_com_problema_numerico_obrigatorio"] = int(problema_numerico_obrigatorio.sum())
     resumo["pedidos_com_problema_core"] = int(tratados["pedido_com_problema"].sum())
     return resumo
+
+
+def investigar_entregas(tratados) -> dict:
+    """Avalia se pedidos sem entrega estão associados ao status Cancelado.
+
+    A análise usa a coluna ``data_entrega_ausente`` criada na preparação e não
+    altera o DataFrame. Qualquer status diferente de ``Cancelado`` conta como
+    contraexemplo quando a data de entrega está ausente.
+    """
+    cancelados = tratados["status_pedido"].eq("Cancelado")
+    sem_entrega = tratados["data_entrega_ausente"]
+    outros_sem_entrega = sem_entrega & ~cancelados
+
+    total_sem_entrega = int(sem_entrega.sum())
+    sem_entrega_cancelados = int((sem_entrega & cancelados).sum())
+    sem_entrega_outros_status = int(outros_sem_entrega.sum())
+    hipotese_confirmada = (
+        None if total_sem_entrega == 0 else sem_entrega_outros_status == 0
+    )
+
+    colunas_exemplo = ["pedido_id", "status_pedido", "data_venda", "data_entrega"]
+    exemplos = (
+        tratados.loc[outros_sem_entrega, colunas_exemplo]
+        .head(3)
+        .to_dict(orient="records")
+    )
+
+    return {
+        "total_cancelados": int(cancelados.sum()),
+        "sem_entrega_total": total_sem_entrega,
+        "sem_entrega_cancelados": sem_entrega_cancelados,
+        "sem_entrega_outros_status": sem_entrega_outros_status,
+        "hipotese_confirmada": hipotese_confirmada,
+        "exemplos": exemplos,
+    }

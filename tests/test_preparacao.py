@@ -8,6 +8,7 @@ from funcoes import (
     _converter_data,
     _limpar_categoria,
     carregar_dados,
+    investigar_entregas,
     normalizar_canal,
     preparar_dados,
     resumir_qualidade,
@@ -180,6 +181,69 @@ class TestFuncoesDePreparacao(unittest.TestCase):
         self.assertEqual(resumo["categorias_alteradas_espacos_pontuacao"], 2)
         self.assertEqual(resumo["canais_alterados"], 1)
         self.assertEqual(resumo["canais_nao_reconhecidos"], 1)
+
+    def test_investigacao_de_entregas_na_base_real(self):
+        tratados = preparar_dados(carregar_dados(PASTA / "halloween_vendas.csv"))
+
+        resultado = investigar_entregas(tratados)
+
+        self.assertEqual(resultado["total_cancelados"], 109)
+        self.assertEqual(resultado["sem_entrega_total"], 143)
+        self.assertEqual(resultado["sem_entrega_cancelados"], 109)
+        self.assertEqual(resultado["sem_entrega_outros_status"], 34)
+        self.assertIs(resultado["hipotese_confirmada"], False)
+        self.assertEqual(len(resultado["exemplos"]), 3)
+        self.assertEqual(
+            set(resultado["exemplos"][0]),
+            {"pedido_id", "status_pedido", "data_venda", "data_entrega"},
+        )
+
+    def test_investigacao_de_entregas_distingue_status_e_preserva_dados(self):
+        tratados = preparar_dados(pd.DataFrame([
+            linha(pedido_id="1", status_pedido="Concluído", data_entrega="   "),
+            linha(pedido_id="2", status_pedido="Devolvido", data_entrega=""),
+            linha(pedido_id="3", status_pedido="Em análise", data_entrega=""),
+            linha(pedido_id="4", status_pedido="Cancelado", data_entrega="2024-11-03 18:41:26"),
+            linha(pedido_id="5", status_pedido="Cancelado", data_entrega=""),
+        ]))
+        copia = tratados.copy(deep=True)
+
+        resultado = investigar_entregas(tratados)
+
+        self.assertEqual(resultado["total_cancelados"], 2)
+        self.assertEqual(resultado["sem_entrega_total"], 4)
+        self.assertEqual(resultado["sem_entrega_cancelados"], 1)
+        self.assertEqual(resultado["sem_entrega_outros_status"], 3)
+        self.assertIs(resultado["hipotese_confirmada"], False)
+        self.assertEqual(len(resultado["exemplos"]), 3)
+        self.assertEqual(
+            [exemplo["pedido_id"] for exemplo in resultado["exemplos"]],
+            ["1", "2", "3"],
+        )
+        self.assertEqual(
+            set(resultado["exemplos"][0]),
+            {"pedido_id", "status_pedido", "data_venda", "data_entrega"},
+        )
+        self.assertEqual(resultado["exemplos"][0]["data_entrega"], "   ")
+        pd.testing.assert_frame_equal(tratados, copia)
+
+    def test_investigacao_de_entregas_confirma_ou_nao_avalia_sem_casos(self):
+        cenarios = [
+            (
+                pd.DataFrame([linha(status_pedido="Cancelado", data_entrega="")]),
+                True,
+            ),
+            (
+                pd.DataFrame([linha(status_pedido="Concluído", data_entrega="2024-11-03 18:41:26")]),
+                None,
+            ),
+        ]
+
+        for bruto, hipotese_esperada in cenarios:
+            with self.subTest(hipotese=hipotese_esperada):
+                resultado = investigar_entregas(preparar_dados(bruto))
+                self.assertIs(resultado["hipotese_confirmada"], hipotese_esperada)
+                self.assertEqual(resultado["exemplos"], [])
 
 
 if __name__ == "__main__":

@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from funcoes import carregar_dados, preparar_dados, resumir_qualidade
+from funcoes import carregar_dados, preparar_dados, resumir_qualidade, investigar_entregas
 
 
 def main():
@@ -8,6 +8,7 @@ def main():
     dados = carregar_dados(pasta / "halloween_vendas.csv")
     tratados = preparar_dados(dados)
     qualidade = resumir_qualidade(tratados)
+    entregas = investigar_entregas(tratados)
 
     print("Dimensões:", dados.shape)
     print("Dimensões após preparação:", tratados.shape)
@@ -65,6 +66,29 @@ def main():
     ]
     print("\nAmostra preparada:")
     print(tratados[colunas_tratadas].head(3).to_string(index=False))
+
+    print("\nInvestigação de entregas:")
+    print(f"Pedidos cancelados: {entregas['total_cancelados']}")
+    print(f"Pedidos sem data de entrega: {entregas['sem_entrega_total']}")
+    print(f"  Sem data de entrega com status Cancelado: {entregas['sem_entrega_cancelados']}")
+    print(f"  Sem data de entrega com outro status: {entregas['sem_entrega_outros_status']}")
+    if entregas["hipotese_confirmada"] is None:
+        print("Conclusão: sem casos para avaliar.")
+    elif entregas["hipotese_confirmada"]:
+        print("Conclusão: compatível nesta base, não prova regra geral.")
+    else:
+        print(
+            "Conclusão: a hipótese de que todos os pedidos sem data de entrega são "
+            "cancelados é falsa; há "
+            f"{entregas['sem_entrega_outros_status']} contraexemplos."
+        )
+    if entregas["exemplos"]:
+        print("Exemplos de pedidos sem data de entrega com outro status:")
+        for exemplo in entregas["exemplos"]:
+            print(
+                f"  Pedido {exemplo['pedido_id']} | status: {exemplo['status_pedido']} | "
+                f"venda: {exemplo['data_venda']} | entrega: {exemplo['data_entrega'] or '(vazia)'}"
+            )
 
 
 if __name__ == "__main__":
